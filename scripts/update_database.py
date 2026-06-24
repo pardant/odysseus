@@ -14,11 +14,22 @@ Usage:
     python update_database.py
 """
 
+import re
 import sqlite3
 import os
 from datetime import datetime
 from sqlalchemy import create_engine, inspect, text
 from database import DATABASE_URL, SessionLocal, Base
+
+
+_SAFE_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _quote_ident(name: str) -> str:
+    """Validate and double-quote a SQL identifier to prevent injection."""
+    if not _SAFE_IDENT_RE.match(name):
+        raise ValueError(f"Unsafe SQL identifier: {name!r}")
+    return f'"{name}"'
 
 def check_column_exists(engine, table_name, column_name):
     """Check if a column exists in a table."""
@@ -31,41 +42,51 @@ def add_column_sqlite(db_path, table_name, column_name, column_type, default_val
     Add a column to a SQLite table by creating a new table, copying data, and renaming.
     This is necessary because SQLite has limited ALTER TABLE support.
     """
+    qt = _quote_ident(table_name)
+    qc = _quote_ident(column_name)
+
+    _ALLOWED_TYPES = {"TEXT", "INTEGER", "REAL", "BLOB", "BOOLEAN", "DATETIME"}
+    if column_type.upper() not in _ALLOWED_TYPES:
+        raise ValueError(f"Unsupported column type: {column_type!r}")
+    if default_value is not None and not re.fullmatch(r"[A-Za-z0-9_.+-]+", str(default_value)):
+        raise ValueError(f"Unsafe default value: {default_value!r}")
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # Get current table info
-    cursor.execute(f"PRAGMA table_info({table_name})")
+    cursor.execute(f"PRAGMA table_info({qt})")
     columns = cursor.fetchall()
     column_names = [col[1] for col in columns]
     
     # Create new table with additional column
     new_table_name = f"{table_name}_new"
+    qt_new = _quote_ident(new_table_name)
     
     # Build new column list
     new_columns = []
     for col in columns:
-        new_columns.append(f"{col[1]} {col[2]}")
+        new_columns.append(f"{_quote_ident(col[1])} {col[2]}")
     
     # Add the new column
-    new_column_def = f"{column_name} {column_type}"
+    new_column_def = f"{qc} {column_type}"
     if default_value is not None:
         new_column_def += f" DEFAULT {default_value}"
     new_columns.append(new_column_def)
     
     # Create new table
     columns_sql = ", ".join(new_columns)
-    create_sql = f"CREATE TABLE {new_table_name} ({columns_sql})"
+    create_sql = f"CREATE TABLE {qt_new} ({columns_sql})"
     cursor.execute(create_sql)
     
     # Copy data from old table to new table
-    column_names_str = ", ".join(column_names)
-    insert_sql = f"INSERT INTO {new_table_name} ({column_names_str}) SELECT {column_names_str} FROM {table_name}"
+    quoted_cols = ", ".join(_quote_ident(c) for c in column_names)
+    insert_sql = f"INSERT INTO {qt_new} ({quoted_cols}) SELECT {quoted_cols} FROM {qt}"
     cursor.execute(insert_sql)
     
     # Drop old table and rename new table
-    cursor.execute(f"DROP TABLE {table_name}")
-    cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {table_name}")
+    cursor.execute(f"DROP TABLE {qt}")
+    cursor.execute(f"ALTER TABLE {qt_new} RENAME TO {qt}")
     
     conn.commit()
     conn.close()

@@ -28,6 +28,7 @@ from core.database import SessionLocal
 from src.llm_core import llm_call_async
 from services.memory.memory_extractor import audit_memories
 from src.auth_helpers import get_current_user, require_user
+from core.middleware import require_admin
 from src.endpoint_resolver import resolve_endpoint
 from src.task_endpoint import resolve_task_endpoint
 from src.upload_limits import read_upload_limited, MEMORY_IMPORT_MAX_BYTES
@@ -69,6 +70,7 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
     @router.post("/debug")
     def debug_memory_relevance(request: Request, query: str = Form(...)):
         """Debug which memories would be triggered for a query"""
+        require_admin(request)
         user = _owner(request)
         memories = memory_manager.load(owner=user)
         relevant = memory_manager.get_relevant_memories(query, memories, threshold=0.05)
