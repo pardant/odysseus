@@ -2754,9 +2754,8 @@ def setup_email_routes():
             # (matches how the background email tasks behave).
             from src.endpoint_resolver import resolve_endpoint
 
-            url, model, headers = resolve_endpoint("utility", owner=owner)
-            if not url or not model:
-                url, model, headers = resolve_endpoint("default", owner=owner)
+            from src.llm_helpers import resolve_endpoint_with_fallback
+            url, model, headers = resolve_endpoint_with_fallback(owner=owner)
             if not url or not model:
                 return {"success": False, "error": "No LLM endpoint configured — set a Utility or Default Chat model in Settings → AI Defaults."}
 
@@ -2838,29 +2837,21 @@ def setup_email_routes():
             if att_text:
                 body_for_llm = body + "\n\n--- ATTACHMENTS ---\n\n" + att_text
 
-            url, model, headers = resolve_endpoint("utility", owner=owner)
-            if not url:
-                url, model, headers = resolve_endpoint("default", owner=owner)
+            from src.llm_helpers import resolve_endpoint_with_fallback, build_llm_payload, build_llm_headers
+            url, model, headers = resolve_endpoint_with_fallback(owner=owner)
             if not url or not model:
                 return {"success": False, "error": "No LLM endpoint configured"}
 
-            req_headers = {"Content-Type": "application/json"}
-            if headers:
-                req_headers.update(headers)
-            tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
-            payload = {
-                "model": model,
-                "messages": [
+            req_headers = build_llm_headers(headers)
+            payload = build_llm_payload(
+                model,
+                [
                     {"role": "system", "content": "You are an email summarizer. Format: 1-3 short bullet points (use '- '). Cover: main point, action items, deadlines. If the email has attachments (marked '--- ATTACHMENTS ---'), USE THEIR CONTENTS — pull invoice totals, deadlines, key clauses, concrete numbers/dates from PDFs/docs into the bullets. Be terse.\n\nOUTPUT FORMAT: Put ONLY the bullet points between these exact markers, each on its own line:\n<<<SUMMARY>>>\n- ...\n<<<END>>>\nAny reasoning must come BEFORE <<<SUMMARY>>> (ideally inside <think>...</think>). Only the text between the markers is kept."},
                     {"role": "user", "content": f"From: {sender}\nSubject: {subject}\n\n{body_for_llm[:12000]}\n\n---\n\nSummarize the email. Output the bullets between <<<SUMMARY>>> and <<<END>>>."},
                 ],
-                tok_key: 8192,
-                "temperature": 0.3,
-                "stream": False,
-            }
-            # Reasoning models (o1/o3/o4/gpt-5) reject an explicit temperature.
-            if _restricts_temperature(model):
-                payload.pop("temperature", None)
+                max_tokens=8192,
+                temperature=0.3,
+            )
             resp = await asyncio.to_thread(
                 _req.post, url, json=payload, headers=req_headers, timeout=180
             )
@@ -3258,7 +3249,8 @@ def setup_email_routes():
     async def get_email_urgency_state(owner: str = Depends(require_user)):
         from pathlib import Path as _P
         import json as _json
-        _slug = "".join(c if (c.isalnum() or c in "-_.@") else "_" for c in (owner or "default"))
+        from src.llm_helpers import owner_slug as _owner_slug_fn
+        _slug = _owner_slug_fn(owner)
         path = _P(DATA_DIR) / f"email_urgency_state_{_slug}.json"
         if not path.exists():
             return {"total_unread": 0, "total_urgent": 0, "max_score": 0, "per_uid": {}}

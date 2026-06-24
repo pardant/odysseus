@@ -1332,7 +1332,8 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
         # Per-owner state file so cache-pruning doesn't cross-delete other
         # users' entries (review C4). Legacy path kept as fallback so a
         # single-user install (empty owner) doesn't lose its history.
-        _owner_slug = "".join(c if (c.isalnum() or c in "-_.@") else "_" for c in (owner or "default"))
+        from src.llm_helpers import owner_slug as _owner_slug_fn
+        _owner_slug = _owner_slug_fn(owner)
         STATE = _P(DATA_DIR) / f"note_pings_{_owner_slug}.json"
         STATE.parent.mkdir(parents=True, exist_ok=True)
         # One-time migration: if legacy global file exists and per-owner file
@@ -1493,7 +1494,8 @@ async def action_check_email_urgency(owner: str, **kwargs) -> Tuple[str, bool]:
         # Per-owner state file so multi-user runs don't clobber each other's
         # notified_uids / urgency counts. Empty owner falls back to a generic
         # filename for single-user installs (matches prior behaviour).
-        _owner_slug = "".join(c if (c.isalnum() or c in "-_.@") else "_" for c in (owner or "default"))
+        from src.llm_helpers import owner_slug as _owner_slug_fn2
+        _owner_slug = _owner_slug_fn2(owner)
         STATE_PATH = _P(DATA_DIR) / f"email_urgency_state_{_owner_slug}.json"
         CACHE_DIR = _P(EMAIL_URGENCY_CACHE_DIR)
         CACHE_DIR.mkdir(parents=True, exist_ok=True)

@@ -1875,26 +1875,22 @@ def setup_gallery_routes() -> APIRouter:
                     }],
                 }
             else:
-                _tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model_name) else "max_tokens"
-                payload = {
-                    "model": model_name,
-                    "messages": [{
+                from src.llm_helpers import build_llm_payload
+                payload = build_llm_payload(
+                    model_name,
+                    [{
                         "role": "user",
                         "content": [
                             {"type": "text", "text": tag_prompt},
                             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
                         ],
                     }],
-                    _tok_key: 200,
-                    "temperature": 0.3,
-                }
-                # Reasoning models (o1/o3/o4/gpt-5) reject an explicit temperature.
-                if _restricts_temperature(model_name):
-                    payload.pop("temperature", None)
+                    max_tokens=200,
+                    temperature=0.3,
+                )
 
-            h = {"Content-Type": "application/json"}
-            if headers:
-                h.update(headers)
+            from src.llm_helpers import build_llm_headers
+            h = build_llm_headers(headers)
 
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(chat_url, json=payload, headers=h)

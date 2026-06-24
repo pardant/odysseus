@@ -644,7 +644,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                         removed_files += 1
                     except Exception:
                         pass
-            owner_slug = "".join(c if (c.isalnum() or c in "-_.@") else "_" for c in (user or "default"))
+            from src.llm_helpers import owner_slug as _owner_slug_fn
+            owner_slug = _owner_slug_fn(user)
             for state_path in [Path(DATA_DIR) / f"email_urgency_state_{owner_slug}.json"]:
                 try:
                     if state_path.exists():
@@ -1113,9 +1114,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             "use cron '0 H * * 1-5'. Keep the prompt actionable and self-contained."
         )
         try:
-            url, model, headers = resolve_endpoint("utility", owner=user or None)
-            if not url:
-                url, model, headers = resolve_endpoint("default", owner=user or None)
+            from src.llm_helpers import resolve_endpoint_with_fallback, extract_json_object
+            url, model, headers = resolve_endpoint_with_fallback(owner=user or None)
             if not (url and model):
                 return {"success": False, "message": "No model endpoint configured"}
             raw = await llm_call_async(
@@ -1125,14 +1125,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 temperature=0.2, max_tokens=400, headers=headers, timeout=45,
             )
             text = _strip_think(raw or "", prose=False, prompt_echo=False).strip()
-            if text.startswith("```"):
-                text = text.strip("`")
-                if text.lower().startswith("json"):
-                    text = text[4:].lstrip()
-            # Pull the first {...} block in case the model added stray text.
-            m = _re.search(r"\{.*\}", text, _re.S)
-            draft = _json.loads(m.group(0) if m else text)
-            if not isinstance(draft, dict):
+            draft = extract_json_object(text)
+            if draft is None:
                 raise ValueError("not an object")
             # Whitelist + light validation so the frontend gets clean fields.
             out: Dict[str, Any] = {}

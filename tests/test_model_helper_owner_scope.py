@@ -22,15 +22,13 @@ def test_document_ai_tidy_resolves_with_owner_scope():
 def test_calendar_quick_parse_resolves_with_owner_scope():
     body = _function_source("routes/calendar_routes.py", "quick_parse")
     assert "owner = _require_user(request)" in body
-    assert 'resolve_endpoint("utility", owner=owner or None)' in body
-    assert 'resolve_endpoint("default", owner=owner or None)' in body
+    assert "resolve_endpoint_with_fallback(owner=owner or None)" in body
 
 
 def test_task_parse_resolves_with_owner_scope():
     body = _function_source("routes/task_routes.py", "parse_task")
     assert "user = _owner(request)" in body
-    assert 'resolve_endpoint("utility", owner=user or None)' in body
-    assert 'resolve_endpoint("default", owner=user or None)' in body
+    assert "resolve_endpoint_with_fallback(owner=user or None)" in body
 
 
 def test_history_compact_resolves_with_owner_scope():
@@ -41,5 +39,4 @@ def test_history_compact_resolves_with_owner_scope():
 
 def test_note_reminder_synthesis_resolves_with_owner_scope():
     body = _function_source("routes/note_routes.py", "dispatch_reminder")
-    assert 'resolve_endpoint("utility", owner=owner or None)' in body
-    assert 'resolve_endpoint("default", owner=owner or None)' in body
+    assert "resolve_endpoint_with_fallback(owner=owner or None)" in body
