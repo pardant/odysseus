@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import secrets
 import uuid
 from datetime import datetime
@@ -606,27 +607,35 @@ def setup_task_routes(task_scheduler) -> APIRouter:
         from pathlib import Path
         from routes.email_helpers import SCHEDULED_DB, OWNER_SCOPED_EMAIL_CACHE_TABLES, _email_cache_owner_clause
 
+        _ALLOWED_CACHE_TABLES = {
+            "email_summaries", "email_ai_replies", "email_calendar_extractions",
+            "sender_signatures", "email_tags", "email_urgency_alerts",
+        }
+
         cleared = {}
         conn = sqlite3.connect(SCHEDULED_DB)
         try:
             for table in tables:
+                if table not in _ALLOWED_CACHE_TABLES or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+                    continue
+                quoted = f'"{table}"'
                 try:
                     if table == "email_tags" and user:
                         before = conn.execute(
-                            "SELECT COUNT(*) FROM email_tags WHERE owner = ? OR owner = ''",
+                            f"SELECT COUNT(*) FROM {quoted} WHERE owner = ? OR owner = ''",
                             (user,),
                         ).fetchone()[0]
-                        conn.execute("DELETE FROM email_tags WHERE owner = ? OR owner = ''", (user,))
+                        conn.execute(f"DELETE FROM {quoted} WHERE owner = ? OR owner = ''", (user,))
                     elif table in OWNER_SCOPED_EMAIL_CACHE_TABLES and user:
                         owner_clause, owner_params = _email_cache_owner_clause(user)
                         before = conn.execute(
-                            f"SELECT COUNT(*) FROM {table} WHERE {owner_clause}",
+                            f"SELECT COUNT(*) FROM {quoted} WHERE {owner_clause}",
                             owner_params,
                         ).fetchone()[0]
-                        conn.execute(f"DELETE FROM {table} WHERE {owner_clause}", owner_params)
+                        conn.execute(f"DELETE FROM {quoted} WHERE {owner_clause}", owner_params)
                     else:
-                        before = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                        conn.execute(f"DELETE FROM {table}")
+                        before = conn.execute(f"SELECT COUNT(*) FROM {quoted}").fetchone()[0]
+                        conn.execute(f"DELETE FROM {quoted}")
                     cleared[table] = int(before or 0)
                 except sqlite3.OperationalError:
                     cleared[table] = 0

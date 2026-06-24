@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1264,12 +1265,16 @@ def _migrate_assign_legacy_owner():
             "gallery_albums", "gallery_people", "user_tool_data",
             "api_tokens", "webhooks",
         ]
+        _allowed = set(tables)
         for table in tables:
+            if table not in _allowed or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+                continue
+            quoted = f'"{table}"'
             try:
-                cursor = conn.execute(f"PRAGMA table_info({table})")
+                cursor = conn.execute(f"PRAGMA table_info({quoted})")
                 columns = [row[1] for row in cursor.fetchall()]
                 if "owner" in columns:
-                    res = conn.execute(f"UPDATE {table} SET owner = ? WHERE owner IS NULL", (admin_user,))
+                    res = conn.execute(f"UPDATE {quoted} SET owner = ? WHERE owner IS NULL", (admin_user,))
                     if res.rowcount > 0:
                         logger.info(f"Assigned {res.rowcount} legacy rows in {table} to '{admin_user}'")
             except Exception as e:

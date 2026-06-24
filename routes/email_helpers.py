@@ -428,26 +428,30 @@ def _email_cache_owner_clause(owner: str = "") -> tuple[str, tuple[str, ...]]:
 
 def _ensure_owner_scoped_email_cache_table(conn, table: str, create_sql: str, columns: list[str]):
     """Rebuild legacy Message-ID-only cache tables with owner in the PK."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+        raise ValueError(f"Invalid table name: {table!r}")
+    quoted = f'"{table}"'
+    old_quoted = f'"{table}__old"'
     conn.execute(create_sql)
     try:
-        info = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        info = conn.execute(f"PRAGMA table_info({quoted})").fetchall()
         cols = [r[1] for r in info]
         pk_cols = [r[1] for r in sorted((r for r in info if r[5]), key=lambda r: r[5])]
         if "owner" in cols and pk_cols == ["message_id", "owner"]:
             return
 
-        conn.execute(f"ALTER TABLE {table} RENAME TO {table}__old")
+        conn.execute(f"ALTER TABLE {quoted} RENAME TO {old_quoted}")
         conn.execute(create_sql)
-        old_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table}__old)").fetchall()]
+        old_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({old_quoted})").fetchall()]
         copy_cols = [c for c in columns if c != "owner" and c in old_cols]
         source_owner = "COALESCE(owner, '')" if "owner" in old_cols else "''"
-        target_cols = ["owner", *copy_cols]
-        select_exprs = [source_owner, *copy_cols]
+        safe_target_cols = [f'"{c}"' for c in ["owner", *copy_cols]]
+        select_exprs = [source_owner, *[f'"{c}"' for c in copy_cols]]
         conn.execute(
-            f"INSERT OR IGNORE INTO {table} ({', '.join(target_cols)}) "
-            f"SELECT {', '.join(select_exprs)} FROM {table}__old"
+            f"INSERT OR IGNORE INTO {quoted} ({', '.join(safe_target_cols)}) "
+            f"SELECT {', '.join(select_exprs)} FROM {old_quoted}"
         )
-        conn.execute(f"DROP TABLE {table}__old")
+        conn.execute(f"DROP TABLE {old_quoted}")
     except Exception as _mig_e:
         import logging as _lg
         _lg.getLogger(__name__).warning(f"{table} owner-migration skipped: {_mig_e}")
