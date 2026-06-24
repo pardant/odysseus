@@ -341,7 +341,7 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
                         logger.info(f"llama.cpp /slots reports n_ctx={n_ctx} for {model}")
                         return n_ctx, True
         except Exception:
-            pass
+            logger.debug("llama.cpp /slots probe failed for %s", endpoint_url, exc_info=True)
 
     # GitHub Copilot's /models requires auth + X-GitHub-Api-Version headers that
     # aren't available here; an unauthenticated probe just 400s. All Copilot

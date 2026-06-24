@@ -350,7 +350,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
             try:
                 _memory_vector.add(entry["id"], text)
             except Exception:
-                pass
+                logger.debug("Failed to add memory to vector index", exc_info=True)
         try:
             from src.event_bus import fire_event
             fire_event("memory_added", owner)
@@ -389,7 +389,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
             try:
                 _memory_vector.add(full_id, new_text)
             except Exception:
-                pass
+                logger.debug("Failed to update memory in vector index", exc_info=True)
 
         return {"action": "edit", "memory_id": memory_id,
                 "results": f"Memory updated: {new_text}"}
@@ -421,7 +421,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
             try:
                 _memory_vector.remove(full_id)
             except Exception:
-                pass
+                logger.debug("Failed to remove memory from vector index", exc_info=True)
 
         return {"action": "delete", "memory_id": memory_id,
                 "results": f"Memory '{memory_id}' deleted"}

@@ -284,7 +284,7 @@ def get_user_setting(key: str, owner: str = "", default: Any = None) -> Any:
             if key in prefs and prefs[key] not in (None, ""):
                 return prefs[key]
         except Exception:
-            pass
+            logger.debug("Failed to load per-user setting %r for owner=%r", key, owner, exc_info=True)
     return get_setting(key, default)
 
 

@@ -661,7 +661,7 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
             try:
                 db.commit()
             except Exception:
-                pass
+                logger.warning("Failed to commit heuristic event classifications", exc_info=True)
 
             # Pass 2: batch LLM classification (10 events per call)
             BATCH = 10
@@ -1343,7 +1343,7 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
             try:
                 STATE.write_text(_legacy.read_text(encoding="utf-8"), encoding="utf-8")
             except Exception:
-                pass
+                logger.debug("Failed to migrate legacy note_pings state file", exc_info=True)
         # Scanner ticks every 60s in _note_pings_loop. 90s window guarantees
         # every note's due time lands inside at least one tick's window.
         WINDOW_SEC = 90
@@ -1407,7 +1407,7 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
                         if last_dt >= reping_cutoff:
                             continue
                     except Exception:
-                        pass
+                        logger.debug("Failed to parse last-ping timestamp for note %s", n.id, exc_info=True)
                 # Compose + dispatch.
                 title = (n.title or "Reminder").strip() or "Reminder"
                 body_parts = []
@@ -1425,7 +1425,7 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
                         if pending:
                             body_parts.append("Pending:\n" + "\n".join(f"- {t}" for t in pending[:8]))
                     except Exception:
-                        pass
+                        logger.debug("Failed to parse checklist items for note %s", n.id, exc_info=True)
                 body = "\n\n".join(p for p in body_parts if p) or title
                 try:
                     from routes.note_routes import dispatch_reminder

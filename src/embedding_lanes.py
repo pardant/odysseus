@@ -64,7 +64,7 @@ def reset_embedding_lane_state() -> None:
         from src.embeddings import reset_http_embed_state
         reset_http_embed_state()
     except Exception:
-        pass
+        logger.debug("Failed to reset HTTP embedding state", exc_info=True)
 
 
 def collection_name(base_name: str, lane_name: str) -> str:
