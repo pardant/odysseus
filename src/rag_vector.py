@@ -159,14 +159,14 @@ class VectorRAG:
                 try:
                     add("legacy", client.get_collection(COLLECTION_NAME))
                 except Exception:
-                    pass
+                    logger.debug("Legacy collection %s not found for delete scan", COLLECTION_NAME)
                 for lane_name in (LANE_CUSTOM, LANE_FASTEMBED):
                     try:
                         add(lane_name, client.get_collection(collection_name(COLLECTION_NAME, lane_name)))
                     except Exception:
-                        pass
+                        logger.debug("Collection %s not found for delete scan", collection_name(COLLECTION_NAME, lane_name))
             except Exception:
-                pass
+                logger.debug("Chroma client unavailable during delete scan", exc_info=True)
 
         return collections
 
@@ -444,7 +444,7 @@ class VectorRAG:
             try:
                 client.delete_collection(COLLECTION_NAME)
             except Exception:
-                pass
+                logger.debug("Collection %s did not exist during rebuild", COLLECTION_NAME)
             for name in (
                 collection_name(COLLECTION_NAME, LANE_CUSTOM),
                 collection_name(COLLECTION_NAME, LANE_FASTEMBED),
@@ -452,7 +452,7 @@ class VectorRAG:
                 try:
                     client.delete_collection(name)
                 except Exception:
-                    pass
+                    logger.debug("Collection %s did not exist during rebuild", name)
             # Rebuild means empty current lanes. Clear the legacy unsuffixed
             # collection too so startup migration cannot resurrect stale docs.
             self._lanes = build_embedding_lanes(COLLECTION_NAME)

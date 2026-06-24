@@ -874,7 +874,7 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
                 try:
                     await mcp.disconnect_server(sid)
                 except Exception:
-                    pass
+                    logger.debug("MCP disconnect failed during server deletion for %s", sid, exc_info=True)
             db.delete(srv)
             db.commit()
             return {"response": f"Deleted MCP server '{name}'", "exit_code": 0}
@@ -1356,7 +1356,7 @@ async def do_api_call(content: str) -> Dict:
             try:
                 args["body"] = json.loads("\n".join(lines[2:]))
             except json.JSONDecodeError:
-                pass
+                logger.debug("Failed to parse integration request body as JSON")
 
     integration_name = args.get("integration", "")
     integrations = load_integrations()
@@ -1452,7 +1452,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                             mark = "x" if item.get("done") else " "
                             lines.append(f"  [{mark}] {i}: {item.get('text', '')}")
                     except (json.JSONDecodeError, TypeError):
-                        pass
+                        logger.debug("Failed to parse checklist items for note %s", n.id)
                 elif n.content:
                     snippet = n.content[:80].replace("\n", " ")
                     lines.append(f"  {snippet}")
@@ -4011,7 +4011,7 @@ async def do_resolve_contact(content: str, owner: Optional[str] = None) -> Dict:
                     if phone:
                         contacts[phone] = {"name": c.get("name") or phone, "source": "contacts", "phone": phone}
     except Exception:
-        pass
+        logger.debug("Failed to load contacts from CardDAV/contacts API", exc_info=True)
 
     async with httpx.AsyncClient(timeout=30) as client:
         # 2. Email history (sent/received)
@@ -4023,7 +4023,7 @@ async def do_resolve_contact(content: str, owner: Optional[str] = None) -> Dict:
                     if email and email not in contacts:
                         contacts[email] = {"name": c.get("name") or email, "source": "email history"}
         except Exception:
-            pass
+            logger.debug("Failed to resolve contact from email history", exc_info=True)
 
     if not contacts:
         return {"output": f"No contacts found matching '{name}'.", "exit_code": 0}
@@ -4118,7 +4118,7 @@ def _load_vault_config() -> Dict:
         try:
             return json.loads(p.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            logger.warning("Failed to load vault config from %s", VAULT_FILE, exc_info=True)
     return {}
 
 
@@ -4227,7 +4227,7 @@ async def do_vault_get(content: str, owner: Optional[str] = None) -> Dict:
                 category="Vault",
             )
     except Exception:
-        pass
+        logger.warning("Failed to write vault access audit log for item %r", name, exc_info=True)
 
     output = [
         f"Vault item: {name}",
@@ -4273,7 +4273,7 @@ async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
         try:
             cfg = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            logger.debug("Failed to read existing vault config, starting fresh")
     cfg["session"] = session
     from datetime import datetime as _dt
     cfg["unlocked_at"] = _dt.utcnow().isoformat()
@@ -4282,6 +4282,6 @@ async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
         import os as _os
         _os.chmod(str(p), 0o600)
     except Exception:
-        pass
+        logger.debug("Could not set vault config file permissions (may be expected on Windows)")
 
     return {"output": "Vault unlocked. Session saved.", "exit_code": 0}

@@ -1160,8 +1160,8 @@ async def _shutdown_event():
     # Stop task scheduler (no-op if it never started under the gate)
     try:
         await task_scheduler.stop()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Task scheduler shutdown error: {e}")
     # Close webhook manager
     try:
         await webhook_manager.close()

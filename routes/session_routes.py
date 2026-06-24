@@ -196,7 +196,7 @@ def _pick_endpoint_for_sort(owner=None):
         if url and model:
             return url, model, headers
     except Exception:
-        pass
+        logger.debug("Task endpoint resolution failed, trying default", exc_info=True)
     # Fall back to default
     url, model, headers = resolve_endpoint("default", owner=owner)
     if url and model:
@@ -239,13 +239,13 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                         try:
                             session_manager.delete_session(_g.id)
                         except Exception:
-                            pass
+                            logger.debug("Failed to delete ghost session %s from manager", _g.id)
                 if _ghosts:
                     _purge_db.commit()
             finally:
                 _purge_db.close()
         except Exception:
-            pass
+            logger.debug("Ghost session purge failed", exc_info=True)
         user_sessions = session_manager.get_sessions_for_user(user)
         # Fetch folder info from DB for each session
         db = SessionLocal()
@@ -572,7 +572,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 if session_manager.delete_session(sid):
                     deleted_count += 1
             except Exception:
-                pass
+                logger.debug("Failed to delete session %s during bulk delete", sid, exc_info=True)
         return {"deleted": deleted_count}
 
     @router.delete("/session/{sid}")

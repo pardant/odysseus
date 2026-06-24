@@ -676,7 +676,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 from src.agent_tools.document_tools import clear_active_document
                 clear_active_document(doc_id)
             except Exception:
-                pass
+                logger.debug("Failed to clear active document pointer for %s", doc_id, exc_info=True)
             db.commit()
             return {"status": "deleted", "id": doc_id}
         except HTTPException:
@@ -1598,7 +1598,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                     try:
                         stamps[fname] = base64.b64decode(s.data_png)
                     except Exception:
-                        pass
+                        logger.debug("Failed to decode signature %s for PDF fill", fname)
 
             import os
             _to_unlink: list[str] = []
