@@ -285,9 +285,8 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
         if auto_spam and not spam_folder:
             logger.warning("Auto-spam enabled but no Junk/Spam folder detected — will classify but not move")
 
-        url, model, headers = resolve_endpoint("utility", owner=account_owner)
-        if not url:
-            url, model, headers = resolve_endpoint("default", owner=account_owner)
+        from src.llm_helpers import resolve_endpoint_with_fallback
+        url, model, headers = resolve_endpoint_with_fallback(owner=account_owner)
         if not url or not model:
             return "No model configured"
 
@@ -390,25 +389,19 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
                 if att_text:
                     body_for_llm = (body or "") + "\n\n--- ATTACHMENTS ---\n\n" + att_text
 
-                req_headers = {"Content-Type": "application/json"}
-                if headers:
-                    req_headers.update(headers)
+                from src.llm_helpers import build_llm_payload, build_llm_headers
+                req_headers = build_llm_headers(headers)
 
                 if need_sum:
-                    tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
-                    payload = {
-                        "model": model,
-                        "messages": [
+                    payload = build_llm_payload(
+                        model,
+                        [
                             {"role": "system", "content": "You are an email summarizer. Format: 1-3 short bullet points (use '- '). Cover: main point, action items, deadlines. If the email has attachments (marked '--- ATTACHMENTS ---'), USE THEIR CONTENTS — pull out invoice totals, deadlines, key clauses, any concrete numbers/dates in PDFs/docs, and reflect them in the bullets. Be terse.\n\nOUTPUT FORMAT: Put ONLY the bullet points between these exact markers, each on its own line:\n<<<SUMMARY>>>\n- ...\n<<<END>>>\nAny reasoning or planning must come BEFORE <<<SUMMARY>>> (ideally inside <think>...</think>). Only the text between the markers is kept."},
                             {"role": "user", "content": f"From: {sender}\nSubject: {subject}\n\n{body_for_llm[:12000]}\n\n---\n\nSummarize the email. Output the bullets between <<<SUMMARY>>> and <<<END>>>."},
                         ],
-                        tok_key: 16384,
-                        "temperature": 0.3,
-                        "stream": False,
-                    }
-                    # Reasoning models (o1/o3/o4/gpt-5) reject an explicit temperature.
-                    if _restricts_temperature(model):
-                        payload.pop("temperature", None)
+                        max_tokens=16384,
+                        temperature=0.3,
+                    )
                     try:
                         # Use to_thread so this sync HTTP call doesn't freeze
                         # the entire event loop while the LLM thinks (240s).
@@ -556,18 +549,18 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
                         )
                         _raw_original = cal_extract or ""
                         cal_extract = _strip_think(_raw_original)
-                        cal_extract = re.sub(r"^```(?:json)?\s*|\s*```$", "", cal_extract, flags=re.MULTILINE).strip()
+                        from src.llm_helpers import strip_code_fences, extract_json_array
+                        cal_extract = strip_code_fences(cal_extract)
                         if not cal_extract and _raw_original:
                             matches = list(re.finditer(r'\[\s*\{[^[\]]*?"action"[^[\]]*?\}\s*(?:,\s*\{[^[\]]*?\}\s*)*\]', _raw_original, re.DOTALL))
                             if matches:
                                 cal_extract = matches[-1].group()
                         logger.info(f"[cal-extract] uid={uid.decode() if isinstance(uid, bytes) else uid} folder={_folder} subj={subject[:50]!r} raw_len={len(cal_extract)} orig_len={len(_raw_original)} raw={cal_extract[:800]!r}")
-                        jm = re.search(r'\[.*\]', cal_extract, re.DOTALL)
-                        if jm:
+                        ops = extract_json_array(cal_extract)
+                        if ops is not None:
                             try:
-                                ops = json.loads(jm.group())
                                 logger.info(f"[cal-extract] parsed {len(ops)} op(s)")
-                                if isinstance(ops, list) and ops:
+                                if ops:
                                     from src.tool_implementations import do_manage_calendar
                                     for op in ops[:3]:
                                         action = (op.get("action") or "").lower()
@@ -715,28 +708,26 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
                             "and phishing-style fake urgency. Real urgency comes from people the user "
                             "actually does business with. Be strict — only mark critical/high when genuinely needed."
                         )
-                        tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
-                        payload = {
-                            "model": model,
-                            "messages": [
+                        payload = build_llm_payload(
+                            model,
+                            [
                                 {"role": "system", "content": urg_sys},
                                 {"role": "user", "content": (
                                     f"From: {sender}\nSubject: {subject}\nDate: {msg.get('Date','')}\n\n"
                                     f"{body[:3000]}"
                                 )},
                             ],
-                            "temperature": 0,
-                            tok_key: 200,
-                        }
+                            temperature=0,
+                            max_tokens=200,
+                        )
                         urg_raw = await llm_call_async(
                             url=url, model=model, messages=payload["messages"],
                             temperature=0, max_tokens=200, headers=req_headers, timeout=60,
                         )
                         urg_raw = _strip_think(urg_raw or "")
-                        urg_raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", urg_raw, flags=re.MULTILINE).strip()
-                        jm = re.search(r'\{.*\}', urg_raw, re.DOTALL)
-                        if jm:
-                            urg_obj = json.loads(jm.group())
+                        from src.llm_helpers import extract_json_object
+                        urg_obj = extract_json_object(urg_raw)
+                        if urg_obj:
                             urgency = (urg_obj.get("urgency") or "none").lower()
                             reason = urg_obj.get("reason") or ""
                             logger.info(f"[urgency] uid={uid} level={urgency} reason={reason[:80]}")
@@ -849,20 +840,15 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
                             "If it's a mass-mailed generic update with no personal CTA, mark spam=true even if from a legitimate service. "
                             "Reason should be 5-10 words."
                         )
-                        tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
-                        payload = {
-                            "model": model,
-                            "messages": [
+                        payload = build_llm_payload(
+                            model,
+                            [
                                 {"role": "system", "content": class_sys},
                                 {"role": "user", "content": f"From: {sender}\nSubject: {subject}\n\n{body[:4000]}"},
                             ],
-                            tok_key: 512,
-                            "temperature": 0.1,
-                            "stream": False,
-                        }
-                        # Reasoning models (o1/o3/o4/gpt-5) reject an explicit temperature.
-                        if _restricts_temperature(model):
-                            payload.pop("temperature", None)
+                            max_tokens=512,
+                            temperature=0.1,
+                        )
                         # to_thread keeps the event loop responsive during the LLM call
                         resp = await asyncio.to_thread(
                             _req.post, url, json=payload, headers=req_headers, timeout=120
@@ -874,14 +860,7 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
                             m = (rdata.get("choices") or [{}])[0].get("message", {})
                             raw_out = (m.get("content") or "").strip()
                             raw_out = _strip_think(raw_out)
-                            raw_out = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_out, flags=re.MULTILINE).strip()
-                            jm = re.search(r'\{.*\}', raw_out, re.DOTALL)
-                            parsed = None
-                            if jm:
-                                try:
-                                    parsed = json.loads(jm.group(0))
-                                except Exception:
-                                    parsed = None
+                            parsed = extract_json_object(raw_out)
                             if parsed is not None:
                                 _ALLOWED_TAGS = {"work","personal","finance","bills","receipt","travel",
                                                  "newsletter","marketing","notification","security","social",

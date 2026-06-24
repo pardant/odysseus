@@ -185,11 +185,12 @@ _HIDDEN_SYSTEM_SESSION_NAMES = {
 def _pick_endpoint_for_sort(owner=None):
     """Pick model endpoint for auto-sort LLM call — uses utility endpoint setting, falls back to default."""
     from src.endpoint_resolver import resolve_endpoint
-    # Try utility endpoint first (what the user configured for background tasks)
-    url, model, headers = resolve_endpoint("utility", owner=owner)
+    from src.llm_helpers import resolve_endpoint_with_fallback
+    # Try utility → default first
+    url, model, headers = resolve_endpoint_with_fallback(owner=owner)
     if url and model:
         return url, model, headers
-    # Fall back to task endpoint
+    # Fall back to task endpoint as last resort
     try:
         from src.task_endpoint import resolve_task_endpoint
         url, model, headers = resolve_task_endpoint(owner=owner)
@@ -197,10 +198,6 @@ def _pick_endpoint_for_sort(owner=None):
             return url, model, headers
     except Exception:
         pass
-    # Fall back to default
-    url, model, headers = resolve_endpoint("default", owner=owner)
-    if url and model:
-        return url, model, headers
     return None, None, None
 
 def setup_session_routes(session_manager: SessionManager, config: dict, webhook_manager=None):

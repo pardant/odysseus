@@ -1423,9 +1423,8 @@ def setup_calendar_routes() -> APIRouter:
         if tz_hint:
             set_user_tz_name(tz_hint)
 
-        url, model, headers = resolve_endpoint("utility", owner=owner or None)
-        if not url:
-            url, model, headers = resolve_endpoint("default", owner=owner or None)
+        from src.llm_helpers import resolve_endpoint_with_fallback
+        url, model, headers = resolve_endpoint_with_fallback(owner=owner or None)
         if not url or not model:
             return {"ok": False, "error": "No LLM endpoint configured"}
 

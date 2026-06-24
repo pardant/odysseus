@@ -451,9 +451,8 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
             )
 
             # Parse JSON
-            raw = raw.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            from src.llm_helpers import strip_code_fences
+            raw = strip_code_fences(raw)
 
             suggestions = json.loads(raw)
             if isinstance(suggestions, list):

@@ -1245,9 +1245,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                     logger.error(f"VL call failed on page {page_index + 1}: {e}")
                     continue
 
-                raw = (raw or "").strip()
-                if raw.startswith("```"):
-                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                from src.llm_helpers import strip_code_fences
+                raw = strip_code_fences(raw or "")
                 try:
                     parsed = json.loads(raw)
                 except Exception:

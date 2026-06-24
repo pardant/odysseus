@@ -171,7 +171,8 @@ async def dispatch_reminder(
             import json as _json
             from datetime import datetime as _dt, timezone as _tz, timedelta as _td
             from pathlib import Path as _P
-            _slug = "".join(c if (c.isalnum() or c in "-_.@") else "_" for c in (owner or "default"))
+            from src.llm_helpers import owner_slug as _owner_slug_fn
+            _slug = _owner_slug_fn(owner)
             cache_path = _P(DATA_DIR) / f"note_pings_{_slug}.json"
             if cache_path.exists():
                 cache = _json.loads(cache_path.read_text(encoding="utf-8"))
@@ -210,9 +211,8 @@ async def dispatch_reminder(
             from src.endpoint_resolver import resolve_endpoint
             from src.llm_core import llm_call_async
             from src.reminder_personas import synthesis_system_prompt
-            url, model, headers = resolve_endpoint("utility", owner=owner or None)
-            if not url:
-                url, model, headers = resolve_endpoint("default", owner=owner or None)
+            from src.llm_helpers import resolve_endpoint_with_fallback
+            url, model, headers = resolve_endpoint_with_fallback(owner=owner or None)
             if url and model:
                 persona_id = (settings.get("reminder_llm_persona") or "").strip()
                 sys_prompt = synthesis_system_prompt(persona_id)
@@ -527,7 +527,8 @@ async def dispatch_reminder(
             # doesn't drop user B's just-fired entry (review C4).
             _STATE = cache_path
             if _STATE is None:
-                _slug = "".join(c if (c.isalnum() or c in "-_.@") else "_" for c in (owner or "default"))
+                from src.llm_helpers import owner_slug as _owner_slug_fn2
+                _slug = _owner_slug_fn2(owner)
                 _STATE = _P(DATA_DIR) / f"note_pings_{_slug}.json"
             _STATE.parent.mkdir(parents=True, exist_ok=True)
             try:
